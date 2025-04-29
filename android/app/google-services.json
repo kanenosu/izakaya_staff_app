@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "44853351550",
+    "project_id": "izakaya-staff-app",
+    "storage_bucket": "izakaya-staff-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:44853351550:android:6ec78171349434292cf42f",
+        "android_client_info": {
+          "package_name": "com.example.izakaya_staff_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDfKL9XaRxU4twn02ivPi1fxc8tfvTskjE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
