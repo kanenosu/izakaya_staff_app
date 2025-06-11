@@ -1,27 +1,44 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart'; // Firebase 初期化用
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart'; // 追加
 import 'package:cloud_firestore/cloud_firestore.dart'; // Firestore 操作用
 import 'handy_order_page.dart'; // ダブルタップで飛ぶハンディ注文画面
 import 'payment_history_page.dart'; // 会計履歴画面
+import 'menu_management_page.dart'; // ← これを追加：メニュー管理画面
+import 'Inventory.dart'; // 在庫管理画面
+import 'widgets/custom_bottom_nav_bar.dart'; // 追加
+import 'login_page.dart'; // 追加
+
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
 // アプリのエントリポイント
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); // Flutter と Firebase の連携準備
-  await Firebase.initializeApp(); // Firebase 初期化
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform, // 追加
+  );
   runApp(MyApp()); // アプリ起動
 }
 
 class MyApp extends StatelessWidget {
+  // 許可するIDリストとパスワードをここで指定
+  static const allowedIds = ['maki', 'your_id2']; // ←ここに許可するIDを入れてください
+  static const password = 'makimaki'; // ←ここにパスワードを設定
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: '居酒屋スタッフアプリ',
       theme: ThemeData(primarySwatch: Colors.red),
-      initialRoute: '/',
+      initialRoute: '/login',
       routes: {
+        '/login':
+            (context) =>
+                LoginPage(allowedIds: allowedIds, correctPassword: password),
         '/': (context) => OrderManagementPage(),
-        '/history': (context) => PaymentHistoryPage(),
+        '/inventory': (context) => InventoryManagementPage(),
+        '/menu': (context) => AdminMenuManagementPage(),
+        // 他の画面も必要に応じて追加
       },
     );
   }
@@ -50,36 +67,59 @@ class OrderManagementPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('注文管理'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.history),
-            tooltip: '会計履歴',
-            onPressed: () => Navigator.pushNamed(context, '/history'),
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        if (details.primaryVelocity != null) {
+          if (details.primaryVelocity! < -200) {
+            Navigator.pushReplacementNamed(context, '/inventory');
+          } else if (details.primaryVelocity! > 200) {
+            // 予約画面があればここに
+          }
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text(
+            '注文管理',
+            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-        ],
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: '予約',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.list), label: '注文'),
-          BottomNavigationBarItem(icon: Icon(Icons.store), label: '在庫'),
-        ],
-        currentIndex: 1,
-      ),
-      body: MasonryGridView.count(
-        crossAxisCount: 3, // 横3列
-        mainAxisSpacing: 8, // 行間
-        crossAxisSpacing: 8, // 列間
-        padding: const EdgeInsets.only(top: 16, bottom: 80),
-        itemCount: tableIds.length,
-        itemBuilder:
-            (context, index) => TableOrdersWidget(tableId: tableIds[index]),
+          centerTitle: true,
+          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.history),
+              tooltip: '会計履歴',
+              onPressed: () => Navigator.pushNamed(context, '/history'),
+            ),
+          ],
+          elevation: 0,
+        ),
+        bottomNavigationBar: CustomBottomNavBar(
+          currentIndex: 1,
+          onTap: (index) {
+            switch (index) {
+              case 0:
+                break;
+              case 1:
+                break;
+              case 2:
+                Navigator.pushReplacementNamed(context, '/inventory');
+                break;
+              case 3:
+                Navigator.pushReplacementNamed(context, '/menu');
+                break;
+            }
+          },
+        ),
+        body: MasonryGridView.count(
+          crossAxisCount: 3,
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          padding: const EdgeInsets.only(top: 16, bottom: 80),
+          itemCount: tableIds.length,
+          itemBuilder:
+              (context, index) => TableOrdersWidget(tableId: tableIds[index]),
+        ),
       ),
     );
   }

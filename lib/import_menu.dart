@@ -1,11 +1,12 @@
-// lib/import_menu.dart
-
+// import_menu.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+// import 'firebase_options.dart'; // FlutterFire CLI で生成したもの
 
-/// メニュー定義。これをあなたの全メニューに置き換えてください。
-const Map<String, dynamic> menuItems = {
+/// 手持ちのデータをそのまま定義
+final Map<String, dynamic> rawData = {
   'ドリンク': {
     'ハイボール': [
       {'name': '強炭酸角ハイボール(角、かくはい)', 'price': 520, 'icon': Icons.local_bar},
@@ -170,191 +171,187 @@ const Map<String, dynamic> menuItems = {
     ],
     // …他サブカテゴリ
   },
-  'フード': {
-    '焼き物': [
-      {'name': 'アミレバー', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': '皮', 'price': 90, 'icon': Icons.outdoor_grill},
-      {'name': 'シロコロ', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': 'つくね', 'price': 250, 'icon': Icons.outdoor_grill},
-      {'name': '豚巻きバンネギ(ぶねぎ)', 'price': 280, 'icon': Icons.outdoor_grill},
-      {'name': '豚巻きレタス(ぶれた)', 'price': 280, 'icon': Icons.outdoor_grill},
-      {'name': '豚巻きトマト(ぶとま)', 'price': 280, 'icon': Icons.outdoor_grill},
-      {'name': '豚巻きアスパラ(ぶあす)', 'price': 280, 'icon': Icons.outdoor_grill},
-      {'name': 'テッポー', 'price': 90, 'icon': Icons.outdoor_grill},
-      {'name': 'ハツ', 'price': 90, 'icon': Icons.outdoor_grill},
-      {'name': 'からしハツ', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': 'ねぎま', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': 'ぼんじり', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': '豚カルビ', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': 'ハツモト', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': 'せせり', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': 'ささみ', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': '手羽先(てば)', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': 'ぶりぶり丸チョウ(マルチョウ)', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': 'しいたけ', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': 'エリンギ', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': 'ししとう', 'price': 180, 'icon': Icons.outdoor_grill},
-      {'name': 'アボカド', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': 'アスパラ', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': '厚揚げ', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': 'マッシュルーム', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': '銀杏', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': '皮付き長芋', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': 'ナス', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': 'アスパラ', 'price': 200, 'icon': Icons.outdoor_grill},
-      {'name': '串5本盛り合わせ(ごほんもり)', 'price': 780, 'icon': Icons.outdoor_grill},
-    ],
+  '焼き物': [
+    {'name': 'アミレバー', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': '皮', 'price': 90, 'icon': Icons.outdoor_grill},
+    {'name': 'シロコロ', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': 'つくね', 'price': 250, 'icon': Icons.outdoor_grill},
+    {'name': '豚巻きバンネギ(ぶねぎ)', 'price': 280, 'icon': Icons.outdoor_grill},
+    {'name': '豚巻きレタス(ぶれた)', 'price': 280, 'icon': Icons.outdoor_grill},
+    {'name': '豚巻きトマト(ぶとま)', 'price': 280, 'icon': Icons.outdoor_grill},
+    {'name': '豚巻きアスパラ(ぶあす)', 'price': 280, 'icon': Icons.outdoor_grill},
+    {'name': 'テッポー', 'price': 90, 'icon': Icons.outdoor_grill},
+    {'name': 'ハツ', 'price': 90, 'icon': Icons.outdoor_grill},
+    {'name': 'からしハツ', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': 'ねぎま', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': 'ぼんじり', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': '豚カルビ', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': 'ハツモト', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': 'せせり', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': 'ささみ', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': '手羽先(てば)', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': 'ぶりぶり丸チョウ(マルチョウ)', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': 'しいたけ', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': 'エリンギ', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': 'ししとう', 'price': 180, 'icon': Icons.outdoor_grill},
+    {'name': 'アボカド', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': 'アスパラ', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': '厚揚げ', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': 'マッシュルーム', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': '銀杏', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': '皮付き長芋', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': 'ナス', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': 'アスパラ', 'price': 200, 'icon': Icons.outdoor_grill},
+    {'name': '串5本盛り合わせ(ごほんもり)', 'price': 780, 'icon': Icons.outdoor_grill},
+  ],
 
-    '一品料理': [
-      {'name': '日替わり煮込み(にこみ)', 'price': 580, 'icon': Icons.restaurant_menu},
-      {'name': 'やみつき塩からあげ(からあげ)', 'price': 680, 'icon': Icons.restaurant_menu},
-      {'name': 'レッチリ3P(れっちり)', 'price': 650, 'icon': Icons.restaurant_menu},
-      {'name': '手羽先素揚げ3P(手羽先素揚げ)', 'price': 500, 'icon': Icons.restaurant_menu},
-      {'name': 'フライドポテト', 'price': 480, 'icon': Icons.restaurant_menu},
-      {'name': 'チリポテト', 'price': 480, 'icon': Icons.restaurant_menu},
-      {'name': '厚焼き玉子プレーン(あつぷれ)', 'price': 480, 'icon': Icons.restaurant_menu},
-      {'name': '厚焼き玉子めんたい(あつめん)', 'price': 580, 'icon': Icons.restaurant_menu},
-      {'name': '厚焼き玉子チーズ(あつちー)', 'price': 580, 'icon': Icons.restaurant_menu},
-      {'name': '厚焼き玉子そぼろ(あつそぼ)', 'price': 580, 'icon': Icons.restaurant_menu},
-      {
-        'name': '熟成地鶏の溶岩スモーク(スモーク)',
-        'price': 980,
-        'icon': Icons.restaurant_menu,
-      },
-      {
-        'name': '厚切り牛タンの溶岩焼き(ぎゅうたん)',
-        'price': 1180,
-        'icon': Icons.restaurant_menu,
-      },
-      {
-        'name': '自家製タルタルのチキン南蛮(ちきなん)',
-        'price': 780,
-        'icon': Icons.restaurant_menu,
-      },
-      {'name': 'MIXホルモンまぜ刺(MIX)', 'price': 880, 'icon': Icons.restaurant_menu},
-      {'name': 'ホタテの刺身', 'price': 680, 'icon': Icons.restaurant_menu},
-      {'name': 'ホタテの磯辺焼き(いそべ)', 'price': 280, 'icon': Icons.restaurant_menu},
-    ],
+  '一品料理': [
+    {'name': '日替わり煮込み(にこみ)', 'price': 580, 'icon': Icons.restaurant_menu},
+    {'name': 'やみつき塩からあげ(からあげ)', 'price': 680, 'icon': Icons.restaurant_menu},
+    {'name': 'レッチリ3P(れっちり)', 'price': 650, 'icon': Icons.restaurant_menu},
+    {'name': '手羽先素揚げ3P(手羽先素揚げ)', 'price': 500, 'icon': Icons.restaurant_menu},
+    {'name': 'フライドポテト', 'price': 480, 'icon': Icons.restaurant_menu},
+    {'name': 'チリポテト', 'price': 480, 'icon': Icons.restaurant_menu},
+    {'name': '厚焼き玉子プレーン(あつぷれ)', 'price': 480, 'icon': Icons.restaurant_menu},
+    {'name': '厚焼き玉子めんたい(あつめん)', 'price': 580, 'icon': Icons.restaurant_menu},
+    {'name': '厚焼き玉子チーズ(あつちー)', 'price': 580, 'icon': Icons.restaurant_menu},
+    {'name': '厚焼き玉子そぼろ(あつそぼ)', 'price': 580, 'icon': Icons.restaurant_menu},
+    {'name': '熟成地鶏の溶岩スモーク(スモーク)', 'price': 980, 'icon': Icons.restaurant_menu},
+    {
+      'name': '厚切り牛タンの溶岩焼き(ぎゅうたん)',
+      'price': 1180,
+      'icon': Icons.restaurant_menu,
+    },
+    {
+      'name': '自家製タルタルのチキン南蛮(ちきなん)',
+      'price': 780,
+      'icon': Icons.restaurant_menu,
+    },
+    {'name': 'MIXホルモンまぜ刺(MIX)', 'price': 880, 'icon': Icons.restaurant_menu},
+    {'name': 'ホタテの刺身', 'price': 680, 'icon': Icons.restaurant_menu},
+    {'name': 'ホタテの磯辺焼き(いそべ)', 'price': 280, 'icon': Icons.restaurant_menu},
+  ],
 
-    'サラダ': [
-      {'name': '新鮮国産野菜のサラダ(こくさら)', 'price': 680, 'icon': Icons.eco},
-      {'name': '自家製タルタルとブロッコリーのサラダ(ぶろさら)', 'price': 680, 'icon': Icons.eco},
-      {'name': 'ささみとアボカドのサラダ(あぼさら)', 'price': 680, 'icon': Icons.eco},
-      {'name': 'オニ玉サラダ(おにたま)', 'price': 580, 'icon': Icons.eco},
-      {'name': 'ピリ辛そぼろと豆腐のサラダ(そぼさら)', 'price': 580, 'icon': Icons.eco},
-      {'name': '万喜風ゴマサラダ(ごマサラ)', 'price': 680, 'icon': Icons.eco},
-    ],
+  'サラダ': [
+    {'name': '新鮮国産野菜のサラダ(こくさら)', 'price': 680, 'icon': Icons.eco},
+    {'name': '自家製タルタルとブロッコリーのサラダ(ぶろさら)', 'price': 680, 'icon': Icons.eco},
+    {'name': 'ささみとアボカドのサラダ(あぼさら)', 'price': 680, 'icon': Icons.eco},
+    {'name': 'オニ玉サラダ(おにたま)', 'price': 580, 'icon': Icons.eco},
+    {'name': 'ピリ辛そぼろと豆腐のサラダ(そぼさら)', 'price': 580, 'icon': Icons.eco},
+    {'name': '万喜風ゴマサラダ(ごマサラ)', 'price': 680, 'icon': Icons.eco},
+  ],
 
-    'おつまみ': [
-      {'name': '冷やっこ', 'price': 250, 'icon': Icons.fastfood},
-      {'name': 'マキ卵', 'price': 250, 'icon': Icons.fastfood},
-      {'name': '冷トマト', 'price': 380, 'icon': Icons.fastfood},
-      {'name': 'ガツ刺し', 'price': 380, 'icon': Icons.fastfood},
-      {'name': 'ガツポン酢', 'price': 380, 'icon': Icons.fastfood},
-      {'name': 'ガツキムチ', 'price': 480, 'icon': Icons.fastfood},
-      {'name': '青唐コブクロ(コブクロ)', 'price': 480, 'icon': Icons.fastfood},
-      {'name': '女帝てる子のぬか漬け(ぬかづけ)', 'price': 380, 'icon': Icons.fastfood},
-      {'name': 'セロリと白菜のゆず漬け(ゆずづけ)', 'price': 380, 'icon': Icons.fastfood},
-      {'name': '漬物盛り合わせ(つけもり)', 'price': 480, 'icon': Icons.fastfood},
-      {'name': '明太マヨささみ(めんまよ)', 'price': 480, 'icon': Icons.fastfood},
-      {'name': 'キムチ', 'price': 300, 'icon': Icons.fastfood},
-      {'name': 'チャンジャ', 'price': 480, 'icon': Icons.fastfood},
-      {'name': 'くじら刺し', 'price': 780, 'icon': Icons.fastfood},
-      {'name': 'バリバリキャベツ', 'price': 280, 'icon': Icons.fastfood},
-      {'name': 'バリバリきゅうり', 'price': 280, 'icon': Icons.fastfood},
-    ],
+  'おつまみ': [
+    {'name': '冷やっこ', 'price': 250, 'icon': Icons.fastfood},
+    {'name': 'マキ卵', 'price': 250, 'icon': Icons.fastfood},
+    {'name': '冷トマト', 'price': 380, 'icon': Icons.fastfood},
+    {'name': 'ガツ刺し', 'price': 380, 'icon': Icons.fastfood},
+    {'name': 'ガツポン酢', 'price': 380, 'icon': Icons.fastfood},
+    {'name': 'ガツキムチ', 'price': 480, 'icon': Icons.fastfood},
+    {'name': '青唐コブクロ(コブクロ)', 'price': 480, 'icon': Icons.fastfood},
+    {'name': '女帝てる子のぬか漬け(ぬかづけ)', 'price': 380, 'icon': Icons.fastfood},
+    {'name': 'セロリと白菜のゆず漬け(ゆずづけ)', 'price': 380, 'icon': Icons.fastfood},
+    {'name': '漬物盛り合わせ(つけもり)', 'price': 480, 'icon': Icons.fastfood},
+    {'name': '明太マヨささみ(めんまよ)', 'price': 480, 'icon': Icons.fastfood},
+    {'name': 'キムチ', 'price': 300, 'icon': Icons.fastfood},
+    {'name': 'チャンジャ', 'price': 480, 'icon': Icons.fastfood},
+    {'name': 'くじら刺し', 'price': 780, 'icon': Icons.fastfood},
+    {'name': 'バリバリキャベツ', 'price': 280, 'icon': Icons.fastfood},
+    {'name': 'バリバリきゅうり', 'price': 280, 'icon': Icons.fastfood},
+  ],
 
-    '鍋': [
-      {'name': '青春の塩もつ鍋(塩もつ)', 'price': 980, 'icon': Icons.ramen_dining},
-      {'name': '情熱の味噌もつ(みそもつ)', 'price': 1280, 'icon': Icons.ramen_dining},
-      {'name': '火吹き辛辛もつ鍋(辛もつ)', 'price': 1480, 'icon': Icons.ramen_dining},
-      {'name': '青春の塩ちゃんこ鍋(塩ちゃんこ)', 'price': 900, 'icon': Icons.ramen_dining},
-      {'name': '情熱の味噌ちゃんこ鍋(みそちゃんこ)', 'price': 1200, 'icon': Icons.ramen_dining},
-      {'name': '火吹き辛辛ちゃんこ鍋(からちゃんこ)', 'price': 1400, 'icon': Icons.ramen_dining},
-    ],
+  '鍋': [
+    {'name': '青春の塩もつ鍋(塩もつ)', 'price': 980, 'icon': Icons.ramen_dining},
+    {'name': '情熱の味噌もつ(みそもつ)', 'price': 1280, 'icon': Icons.ramen_dining},
+    {'name': '火吹き辛辛もつ鍋(辛もつ)', 'price': 1480, 'icon': Icons.ramen_dining},
+    {'name': '青春の塩ちゃんこ鍋(塩ちゃんこ)', 'price': 900, 'icon': Icons.ramen_dining},
+    {'name': '情熱の味噌ちゃんこ鍋(みそちゃんこ)', 'price': 1200, 'icon': Icons.ramen_dining},
+    {'name': '火吹き辛辛ちゃんこ鍋(からちゃんこ)', 'price': 1400, 'icon': Icons.ramen_dining},
+  ],
 
-    'トッピング': [
-      {'name': 'トッピングマルチョウ', 'price': 500, 'icon': Icons.add},
-      {'name': 'トッピングつくね', 'price': 500, 'icon': Icons.add},
-      {'name': 'トッピング鶏肉', 'price': 500, 'icon': Icons.add},
-      {'name': 'トッピング豚肉', 'price': 500, 'icon': Icons.add},
-      {'name': '野菜セット', 'price': 500, 'icon': Icons.add},
-      {'name': 'きのこセット', 'price': 500, 'icon': Icons.add},
-      {'name': '追加スープ', 'price': 300, 'icon': Icons.add},
-      {'name': '雑炊セット', 'price': 600, 'icon': Icons.add},
-      {'name': 'ラーメンセット', 'price': 600, 'icon': Icons.add},
-      {'name': 'チーズリゾット', 'price': 700, 'icon': Icons.add},
-    ],
+  'トッピング': [
+    {'name': 'トッピングマルチョウ', 'price': 500, 'icon': Icons.add},
+    {'name': 'トッピングつくね', 'price': 500, 'icon': Icons.add},
+    {'name': 'トッピング鶏肉', 'price': 500, 'icon': Icons.add},
+    {'name': 'トッピング豚肉', 'price': 500, 'icon': Icons.add},
+    {'name': '野菜セット', 'price': 500, 'icon': Icons.add},
+    {'name': 'きのこセット', 'price': 500, 'icon': Icons.add},
+    {'name': '追加スープ', 'price': 300, 'icon': Icons.add},
+    {'name': '雑炊セット', 'price': 600, 'icon': Icons.add},
+    {'name': 'ラーメンセット', 'price': 600, 'icon': Icons.add},
+    {'name': 'チーズリゾット', 'price': 700, 'icon': Icons.add},
+  ],
 
-    '〆メニュー': [
-      {'name': 'そぼろ丼(そぼろ)', 'price': 680, 'icon': Icons.set_meal},
-      {'name': 'TKG', 'price': 580, 'icon': Icons.set_meal},
-      {'name': '鶏飯', 'price': 800, 'icon': Icons.set_meal},
-      {'name': 'キーマカレー(キーマ)', 'price': 880, 'icon': Icons.set_meal},
-      {'name': 'チーズキーマカレー(チーキー)', 'price': 950, 'icon': Icons.set_meal},
-      {'name': '白湯スープ', 'price': 300, 'icon': Icons.set_meal},
-      {'name': '白湯ラーメン', 'price': 800, 'icon': Icons.set_meal},
-    ],
+  '〆メニュー': [
+    {'name': 'そぼろ丼(そぼろ)', 'price': 680, 'icon': Icons.set_meal},
+    {'name': 'TKG', 'price': 580, 'icon': Icons.set_meal},
+    {'name': '鶏飯', 'price': 800, 'icon': Icons.set_meal},
+    {'name': 'キーマカレー(キーマ)', 'price': 880, 'icon': Icons.set_meal},
+    {'name': 'チーズキーマカレー(チーキー)', 'price': 950, 'icon': Icons.set_meal},
+    {'name': '白湯スープ', 'price': 300, 'icon': Icons.set_meal},
+    {'name': '白湯ラーメン', 'price': 800, 'icon': Icons.set_meal},
+  ],
 
-    'デザート': [
-      {'name': 'ふわとろはちみつチーズ(はちチー)', 'price': 780, 'icon': Icons.icecream},
-      {'name': 'バニラアイス', 'price': 280, 'icon': Icons.icecream},
-      {'name': 'ハニーバター', 'price': 680, 'icon': Icons.icecream},
-      {'name': '大人のアフォガード', 'price': 680, 'icon': Icons.icecream},
-    ],
+  'デザート': [
+    {'name': 'ふわとろはちみつチーズ(はちチー)', 'price': 780, 'icon': Icons.icecream},
+    {'name': 'バニラアイス', 'price': 280, 'icon': Icons.icecream},
+    {'name': 'ハニーバター', 'price': 680, 'icon': Icons.icecream},
+    {'name': '大人のアフォガード', 'price': 680, 'icon': Icons.icecream},
+  ],
 
-    'その他': [
-      {'name': 'ビールセット', 'price': 500, 'icon': Icons.local_bar},
-      {
-        'name': '【熟成地鶏！漫喫コース】全11品2時間飲み放題付き',
-        'price': 4880,
-        'icon': Icons.local_bar,
-      },
-      {'name': '飲み放題2H', 'price': 1800, 'icon': Icons.local_bar},
-      {'name': '飲み放題1H延長', 'price': 900, 'icon': Icons.local_bar},
-    ],
+  'その他': [
+    {'name': 'ビールセット', 'price': 500, 'icon': Icons.local_bar},
+    {
+      'name': '【熟成地鶏！漫喫コース】全11品2時間飲み放題付き',
+      'price': 4880,
+      'icon': Icons.local_bar,
+    },
+    {'name': '飲み放題2H', 'price': 1800, 'icon': Icons.local_bar},
+    {'name': '飲み放題1H延長', 'price': 900, 'icon': Icons.local_bar},
+  ],
 
-    'お通し': [
-      {'name': 'お通し', 'price': 300, 'icon': Icons.fastfood},
-    ],
-  }, // …その他の大カテゴリ
+  'お通し': [
+    {'name': 'お通し', 'price': 300, 'icon': Icons.fastfood},
+  ],
 };
 
-Future<void> importMenu() async {
-  await Firebase.initializeApp();
-  final db = FirebaseFirestore.instance;
-  final batch = db.batch();
-  final col = db.collection('menus');
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    // options: DefaultFirebaseOptions.currentPlatform,
+  );
 
-  menuItems.forEach((category, data) {
-    if (data is Map<String, dynamic>) {
-      // サブカテゴリあり（ドリンク）
-      data.forEach((subCat, items) {
-        for (var item in (items as List)) {
-          final doc = col.doc();
-          batch.set(doc, {
-            'category': category,
-            'subCategory': subCat,
-            'name': item['name'],
-            'price': item['price'],
-          });
+  final batch = FirebaseFirestore.instance.batch();
+  final col = FirebaseFirestore.instance.collection('menu_items');
+
+  rawData.forEach((topCategory, value) {
+    if (value is Map<String, List>) {
+      // ドリンク系：大カテゴリ/サブカテゴリ
+      value.forEach((subCategory, items) {
+        for (var item in items) {
+          batch.set(
+            col.doc(), // 自動ID
+            {
+              'name': item['name'],
+              'price': item['price'],
+              'category': '$topCategory/$subCategory',
+            },
+          );
         }
       });
-    } else if (data is List) {
-      // サブカテゴリなし
-      for (var item in data) {
-        final doc = col.doc();
-        batch.set(doc, {
-          'category': category,
-          'subCategory': '',
+    } else if (value is List) {
+      // フード系：カテゴリそのまま
+      for (var item in value) {
+        batch.set(col.doc(), {
           'name': item['name'],
           'price': item['price'],
+          'category': topCategory,
         });
       }
     }
   });
 
-  // 一度にコミット
   await batch.commit();
-  print('✅ メニューを Firestore にインポートしました！');
+  print('✅ 一括インポート完了！');
+  exit(0); // スクリプト終了
 }
