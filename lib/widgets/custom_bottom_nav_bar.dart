@@ -21,10 +21,13 @@ class CustomBottomNavBar extends StatelessWidget {
       currentIndex: currentIndex,
       onTap: onTap,
       items: const [
-        BottomNavigationBarItem(icon: Icon(Icons.calendar_today), label: '予約'),
-        BottomNavigationBarItem(icon: Icon(Icons.list), label: '注文'),
-        BottomNavigationBarItem(icon: Icon(Icons.store), label: '在庫'),
-        BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'メニュー管理'),
+        BottomNavigationBarItem(icon: Icon(Icons.local_bar), label: '日本酒'), // 0
+        BottomNavigationBarItem(icon: Icon(Icons.list), label: '注文'), // 1
+        BottomNavigationBarItem(icon: Icon(Icons.store), label: '在庫'), // 2
+        BottomNavigationBarItem(
+          icon: Icon(Icons.menu_book),
+          label: 'メニュー管理',
+        ), // 3
       ],
     );
   }

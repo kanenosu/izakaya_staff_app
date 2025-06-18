@@ -44,20 +44,20 @@ class _InventoryManagementPageState extends State<InventoryManagementPage> {
           elevation: 0,
         ),
         bottomNavigationBar: CustomBottomNavBar(
-          currentIndex: 2,
+          currentIndex: 3,
           onTap: (index) {
             switch (index) {
               case 0:
-                // 予約画面へ（未実装なら何もしない or 実装時に追加）
+                Navigator.pushReplacementNamed(context, '/sake');
                 break;
               case 1:
                 Navigator.pushReplacementNamed(context, '/');
                 break;
               case 2:
-                // 今いる画面なので何もしない
+                Navigator.pushReplacementNamed(context, '/inventory');
                 break;
               case 3:
-                Navigator.pushReplacementNamed(context, '/menu');
+                // 今いる画面なので何もしない
                 break;
             }
           },

@@ -8,6 +8,7 @@ import 'menu_management_page.dart'; // ← これを追加：メニュー管理�
 import 'Inventory.dart'; // 在庫管理画面
 import 'widgets/custom_bottom_nav_bar.dart'; // 追加
 import 'login_page.dart'; // 追加
+import 'sake.dart'; // ← 追加
 
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
@@ -38,6 +39,7 @@ class MyApp extends StatelessWidget {
         '/': (context) => OrderManagementPage(),
         '/inventory': (context) => InventoryManagementPage(),
         '/menu': (context) => AdminMenuManagementPage(),
+        '/sake': (context) => SakePage(), // ← 追加
         // 他の画面も必要に応じて追加
       },
     );
@@ -73,7 +75,7 @@ class OrderManagementPage extends StatelessWidget {
           if (details.primaryVelocity! < -200) {
             Navigator.pushReplacementNamed(context, '/inventory');
           } else if (details.primaryVelocity! > 200) {
-            // 予約画面があればここに
+            Navigator.pushReplacementNamed(context, '/sake'); // ← ここを修正
           }
         }
       },
@@ -99,8 +101,10 @@ class OrderManagementPage extends StatelessWidget {
           onTap: (index) {
             switch (index) {
               case 0:
+                Navigator.pushReplacementNamed(context, '/sake');
                 break;
               case 1:
+                // 注文管理ページなので何もしない
                 break;
               case 2:
                 Navigator.pushReplacementNamed(context, '/inventory');
