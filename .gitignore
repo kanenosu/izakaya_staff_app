@@ -32,7 +32,20 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
-!/docs/
+
+# Web build output at root (GitHub Pages uses /docs instead)
+/flutter.js
+/flutter_bootstrap.js
+/flutter_service_worker.js
+/main.dart.js
+/index.html
+/manifest.json
+/version.json
+/favicon.png
+/.last_build_id
+/canvaskit/
+/icons/
+/assets/
 
 # Symbolication related
 app.*.symbols
