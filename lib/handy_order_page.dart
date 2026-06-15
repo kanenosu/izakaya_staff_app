@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'services/whisper_service.dart';
 
 /// カート用モデル
 class CartItem {
@@ -24,27 +26,46 @@ class _HandyOrderPageState extends State<HandyOrderPage>
   bool _isDragging = false;
   int _dragQty = 1;
 
+  late final WhisperService _whisperService;
+  bool _isRecording = false;
+  bool _isTranscribing = false;
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _menuDocs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _whisperService = WhisperService();
+  }
+
+  @override
+  void dispose() {
+    _whisperService.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     return Scaffold(
       appBar: AppBar(title: Text('テーブル${widget.tableId} 注文')),
+      floatingActionButton: kIsWeb ? null : _buildMicFab(),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream:
-        FirebaseFirestore.instance
-            .collection('menu_items')
-            .orderBy('category')
-            .orderBy('order')
-            .snapshots(),
+            FirebaseFirestore.instance
+                .collection('menu_items')
+                .orderBy('category')
+                .orderBy('order')
+                .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData)
+          if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
-          final docs = snapshot.data!.docs;
+          }
+          _menuDocs = snapshot.data!.docs;
 
           // カテゴリでグルーピング
           final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>
           grouped = {};
-          for (var doc in docs) {
+          for (var doc in _menuDocs) {
             final cat = doc.data()['category'] as String? ?? 'その他';
             grouped.putIfAbsent(cat, () => []).add(doc);
           }
@@ -62,9 +83,8 @@ class _HandyOrderPageState extends State<HandyOrderPage>
             'デザート',
             'その他',
           ];
-          // 存在しないカテゴリは除外
           final categories =
-          fixedCategories.where((c) => grouped.containsKey(c)).toList();
+              fixedCategories.where((c) => grouped.containsKey(c)).toList();
 
           return DefaultTabController(
             length: categories.length,
@@ -82,114 +102,115 @@ class _HandyOrderPageState extends State<HandyOrderPage>
                 Expanded(
                   child: TabBarView(
                     children:
-                    categories.map((cat) {
-                      // ドリンク：subCategoryを固定順で表示
-                      if (cat == 'ドリンク') {
-                        final drinkItems = grouped['ドリンク']!;
-                        // subCategoryでグルーピング
-                        final Map<
-                            String,
-                            List<QueryDocumentSnapshot<Map<String, dynamic>>>
-                        >
-                        subGrouped = {};
-                        for (var doc in drinkItems) {
-                          final sub =
-                              doc.data()['subCategory'] as String? ?? 'その他';
-                          subGrouped.putIfAbsent(sub, () => []).add(doc);
-                        }
-                        // ドリンク内の表示順を定義
-                        final drinkOrder = [
-                          'ビール',
-                          'サワー',
-                          'ハイボール',
-                          '日本酒',
-                          '焼酎',
-                          'ワイン',
-                          'ソフトドリンク',
-                          'その他',
-                        ];
-                        // 並べ替え
-                        final sortedSubCats = [
-                          ...drinkOrder.where(
+                        categories.map((cat) {
+                          // ドリンク：subCategoryを固定順で表示
+                          if (cat == 'ドリンク') {
+                            final drinkItems = grouped['ドリンク']!;
+                            final Map<
+                                String,
+                                List<
+                                    QueryDocumentSnapshot<Map<String, dynamic>>
+                                >
+                            >
+                            subGrouped = {};
+                            for (var doc in drinkItems) {
+                              final sub =
+                                  doc.data()['subCategory'] as String? ??
+                                  'その他';
+                              subGrouped.putIfAbsent(sub, () => []).add(doc);
+                            }
+                            final drinkOrder = [
+                              'ビール',
+                              'サワー',
+                              'ハイボール',
+                              '日本酒',
+                              '焼酎',
+                              'ワイン',
+                              'ソフトドリンク',
+                              'その他',
+                            ];
+                            final sortedSubCats = [
+                              ...drinkOrder.where(
                                 (d) => subGrouped.containsKey(d),
-                          ),
-                          ...subGrouped.keys.where(
+                              ),
+                              ...subGrouped.keys.where(
                                 (k) => !drinkOrder.contains(k),
-                          ),
-                        ];
+                              ),
+                            ];
 
-                        return ListView(
-                          padding: const EdgeInsets.all(8),
-                          children:
-                          sortedSubCats.map((subCat) {
-                            final items = subGrouped[subCat]!;
-                            return Column(
-                              crossAxisAlignment:
-                              CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 4,
-                                  ),
-                                  child: Text(
-                                    subCat,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                GridView.builder(
-                                  physics:
-                                  const NeverScrollableScrollPhysics(),
-                                  shrinkWrap: true,
-                                  padding: const EdgeInsets.only(
-                                    bottom: 12,
-                                  ),
-                                  gridDelegate:
-                                  const SliverGridDelegateWithMaxCrossAxisExtent(
-                                    maxCrossAxisExtent: 160,
-                                    childAspectRatio: 3 / 2,
-                                    crossAxisSpacing: 8,
-                                    mainAxisSpacing: 8,
-                                  ),
-                                  itemCount: items.length,
-                                  itemBuilder: (context, index) {
-                                    final data = items[index].data();
-                                    final name = data['name'] as String;
-                                    final price = data['price'] as int;
-                                    return _buildMenuCard(name, price);
-                                  },
-                                ),
-                              ],
+                            return ListView(
+                              padding: const EdgeInsets.all(8),
+                              children:
+                                  sortedSubCats.map((subCat) {
+                                    final items = subGrouped[subCat]!;
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 4,
+                                          ),
+                                          child: Text(
+                                            subCat,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        GridView.builder(
+                                          physics:
+                                              const NeverScrollableScrollPhysics(),
+                                          shrinkWrap: true,
+                                          padding: const EdgeInsets.only(
+                                            bottom: 12,
+                                          ),
+                                          gridDelegate:
+                                              const SliverGridDelegateWithMaxCrossAxisExtent(
+                                                maxCrossAxisExtent: 160,
+                                                childAspectRatio: 3 / 2,
+                                                crossAxisSpacing: 8,
+                                                mainAxisSpacing: 8,
+                                              ),
+                                          itemCount: items.length,
+                                          itemBuilder: (context, index) {
+                                            final data = items[index].data();
+                                            final name =
+                                                data['name'] as String;
+                                            final price = data['price'] as int;
+                                            return _buildMenuCard(name, price);
+                                          },
+                                        ),
+                                      ],
+                                    );
+                                  }).toList(),
                             );
-                          }).toList(),
-                        );
-                      }
+                          }
 
-                      // その他カテゴリは通常グリッド
-                      final items = grouped[cat]!;
-                      return GridView.builder(
-                        padding: const EdgeInsets.all(8),
-                        gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent: 160,
-                          childAspectRatio: 3 / 2,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                        ),
-                        itemCount: items.length,
-                        itemBuilder: (context, index) {
-                          final data = items[index].data();
-                          final name = data['name'] as String;
-                          final price = data['price'] as int;
-                          return _buildMenuCard(name, price);
-                        },
-                      );
-                    }).toList(),
+                          // その他カテゴリは通常グリッド
+                          final items = grouped[cat]!;
+                          return GridView.builder(
+                            padding: const EdgeInsets.all(8),
+                            gridDelegate:
+                                const SliverGridDelegateWithMaxCrossAxisExtent(
+                                  maxCrossAxisExtent: 160,
+                                  childAspectRatio: 3 / 2,
+                                  crossAxisSpacing: 8,
+                                  mainAxisSpacing: 8,
+                                ),
+                            itemCount: items.length,
+                            itemBuilder: (context, index) {
+                              final data = items[index].data();
+                              final name = data['name'] as String;
+                              final price = data['price'] as int;
+                              return _buildMenuCard(name, price);
+                            },
+                          );
+                        }).toList(),
                   ),
                 ),
-                // 仮リスト表示：List形式
+                // 仮リスト表示
                 SizedBox(
                   height: screenHeight * 0.35,
                   child: Column(
@@ -204,11 +225,15 @@ class _HandyOrderPageState extends State<HandyOrderPage>
                               final item = _cart[i];
                               return ListTile(
                                 title: Text(item.name),
-                                subtitle: Text('¥${item.price} × ${item.qty}'),
+                                subtitle: Text(
+                                  '¥${item.price} × ${item.qty}',
+                                ),
                                 trailing: IconButton(
                                   icon: const Icon(Icons.delete),
                                   onPressed:
-                                      () => setState(() => _cart.removeAt(i)),
+                                      () => setState(
+                                        () => _cart.removeAt(i),
+                                      ),
                                 ),
                               );
                             },
@@ -238,10 +263,149 @@ class _HandyOrderPageState extends State<HandyOrderPage>
     );
   }
 
+  Widget _buildMicFab() {
+    if (_isTranscribing) {
+      return FloatingActionButton(
+        onPressed: null,
+        backgroundColor: Colors.grey,
+        child: const SizedBox(
+          width: 24,
+          height: 24,
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2.5,
+          ),
+        ),
+      );
+    }
+    return FloatingActionButton(
+      onPressed: _toggleVoiceOrder,
+      backgroundColor: _isRecording ? Colors.red : Colors.indigo,
+      tooltip: _isRecording ? '録音停止・送信' : '音声でメニューを注文',
+      child: Icon(_isRecording ? Icons.stop : Icons.mic),
+    );
+  }
+
+  Future<void> _toggleVoiceOrder() async {
+    if (_isRecording) {
+      setState(() => _isTranscribing = true);
+      final text = await _whisperService.stopAndTranscribe();
+      setState(() {
+        _isRecording = false;
+        _isTranscribing = false;
+      });
+      if (text != null && text.isNotEmpty) {
+        _handleTranscript(text);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('音声を認識できませんでした')),
+        );
+      }
+    } else {
+      final started = await _whisperService.startRecording();
+      if (started) {
+        setState(() => _isRecording = true);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('マイクへのアクセス権限が必要です')),
+        );
+      }
+    }
+  }
+
+  void _handleTranscript(String transcript) {
+    final matched = _matchMenuItems(transcript);
+    if (matched.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('「$transcript」→ 一致するメニューが見つかりませんでした'),
+        ),
+      );
+      return;
+    }
+    if (matched.length == 1) {
+      final data = matched.first.data();
+      final name = _extractBaseName(data['name'] as String);
+      final price = data['price'] as int;
+      _addToCart(name, price, 1);
+      return;
+    }
+    showDialog(
+      context: context,
+      builder:
+          (_) => AlertDialog(
+            title: const Text('メニューを選択'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '「$transcript」',
+                  style: const TextStyle(color: Colors.grey, fontSize: 12),
+                ),
+                const SizedBox(height: 8),
+                ...matched.map((doc) {
+                  final data = doc.data();
+                  final name = _extractBaseName(data['name'] as String);
+                  final price = data['price'] as int;
+                  return ListTile(
+                    dense: true,
+                    title: Text(name),
+                    subtitle: Text('¥$price'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _addToCart(name, price, 1);
+                    },
+                  );
+                }),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('キャンセル'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  List<QueryDocumentSnapshot<Map<String, dynamic>>> _matchMenuItems(
+    String transcript,
+  ) {
+    final query = transcript.toLowerCase();
+    return _menuDocs.where((doc) {
+      final rawName = doc.data()['name'] as String? ?? '';
+      final baseName = _extractBaseName(rawName).toLowerCase();
+      final aliases =
+          _extractAliases(rawName).map((a) => a.toLowerCase()).toList();
+      return query.contains(baseName) ||
+          baseName.contains(query) ||
+          aliases.any((a) => a.isNotEmpty && (query.contains(a) || a.contains(query)));
+    }).toList();
+  }
+
+  String _extractBaseName(String name) {
+    final idx = name.indexOf('(');
+    return idx >= 0 ? name.substring(0, idx).trim() : name.trim();
+  }
+
+  List<String> _extractAliases(String name) {
+    final match = RegExp(r'\(([^)]+)\)').firstMatch(name);
+    if (match == null) return [];
+    return match
+        .group(1)!
+        .split(RegExp(r'[、,，・]'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
   /// メニューカード構築
   Widget _buildMenuCard(String name, int price) {
+    final displayName = _extractBaseName(name);
     return GestureDetector(
-      onTap: () => _addToCart(name, price, 1),
+      onTap: () => _addToCart(displayName, price, 1),
       onLongPressStart: (_) {
         setState(() {
           _isDragging = true;
@@ -256,7 +420,7 @@ class _HandyOrderPageState extends State<HandyOrderPage>
       },
       onLongPressEnd: (_) {
         if (_isDragging) {
-          _addToCart(name, price, _dragQty);
+          _addToCart(displayName, price, _dragQty);
           setState(() => _isDragging = false);
         }
       },
@@ -267,7 +431,12 @@ class _HandyOrderPageState extends State<HandyOrderPage>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                displayName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
               const Spacer(),
               Text('¥$price'),
               if (_isDragging)
