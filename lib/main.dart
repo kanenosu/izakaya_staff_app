@@ -9,6 +9,7 @@ import 'Inventory.dart'; // 在庫管理画面
 import 'widgets/custom_bottom_nav_bar.dart'; // 追加
 import 'login_page.dart'; // 追加
 import 'sake.dart'; // ← 追加
+import 'app_theme.dart'; // モダンテーマ
 
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 
@@ -30,7 +31,8 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: '居酒屋スタッフアプリ',
-      theme: ThemeData(primarySwatch: Colors.red),
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light(),
       initialRoute: '/login',
       routes: {
         '/login':
@@ -81,12 +83,8 @@ class OrderManagementPage extends StatelessWidget {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text(
-            '注文管理',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
+          title: const Text('注文管理'),
           centerTitle: true,
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
           actions: [
             IconButton(
               icon: const Icon(Icons.history),
@@ -94,7 +92,6 @@ class OrderManagementPage extends StatelessWidget {
               onPressed: () => Navigator.pushNamed(context, '/history'),
             ),
           ],
-          elevation: 0,
         ),
         bottomNavigationBar: CustomBottomNavBar(
           currentIndex: 1,
@@ -169,11 +166,19 @@ class _TableOrdersWidgetState extends State<TableOrdersWidget> {
 
         // 最後の注文からの経過時間（分）
         final lastTs =
-            docs.isNotEmpty ? docs.last.data()['timestamp'].toDate() : null;
-        final durationStr =
-            lastTs != null
-                ? '${DateTime.now().difference(lastTs).inMinutes}分前'
-                : '--';
+            docs.isNotEmpty ? docs.last.data()['timestamp']?.toDate() : null;
+        final elapsedMin =
+            lastTs != null ? DateTime.now().difference(lastTs).inMinutes : null;
+        final durationStr = elapsedMin != null ? '$elapsedMin分前' : '空席';
+        final hasPending = pendingCount.isNotEmpty;
+        final isEmpty = docs.isEmpty;
+
+        // コース・飲み放題
+        final specials = docs
+            .map((d) => d.data()['item'] as String)
+            .where((name) => name.contains('飲み放題') || name.contains('コース'))
+            .toSet()
+            .toList();
 
         return GestureDetector(
           onTap: () => _showDetailOverlay(context),
@@ -184,53 +189,126 @@ class _TableOrdersWidgetState extends State<TableOrdersWidget> {
               ),
             );
           },
-          child: Card(
+          child: Container(
             margin: const EdgeInsets.all(6),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+            constraints: const BoxConstraints(minHeight: 120),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: hasPending ? AppColors.accent : AppColors.line,
+                width: hasPending ? 1.6 : 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: 120),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          widget.tableId,
-                          style: TextStyle(fontWeight: FontWeight.bold),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 3,
                         ),
-                        Text(durationStr, style: TextStyle(fontSize: 12)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    // 飲み放題＆コースは常に表示
-                    ...docs
-                        .map((d) => d.data()['item'] as String)
-                        .where(
-                          (name) =>
-                              name.contains('飲み放題') || name.contains('コース'),
-                        )
-                        .toSet()
-                        .map(
-                          (name) => Text(
-                            name,
-                            style: TextStyle(fontSize: 14, color: Colors.blue),
+                        decoration: BoxDecoration(
+                          color: isEmpty ? AppColors.background : AppColors.ink,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          widget.tableId,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 15,
+                            color:
+                                isEmpty ? AppColors.inkSoft : Colors.white,
                           ),
                         ),
-                    // 未提供のリスト
-                    ...pendingCount.entries.map(
-                      (e) => Text(
-                        '${e.key}×${e.value}',
-                        style: TextStyle(fontSize: 14, color: Colors.red),
+                      ),
+                      Text(
+                        durationStr,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: (elapsedMin != null && elapsedMin >= 30)
+                              ? AppColors.accent
+                              : AppColors.inkSoft,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  // 飲み放題・コース
+                  ...specials.map(
+                    (name) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.info.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.info,
+                          ),
+                        ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                  // 未提供のリスト
+                  ...pendingCount.entries.map(
+                    (e) => Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            margin: const EdgeInsets.only(right: 6),
+                            decoration: const BoxDecoration(
+                              color: AppColors.pending,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              '${e.key} ×${e.value}',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.pending,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (isEmpty)
+                    const Text(
+                      'タップで詳細 / ダブルタップで注文',
+                      style: TextStyle(fontSize: 11, color: AppColors.inkSoft),
+                    ),
+                ],
               ),
             ),
           ),

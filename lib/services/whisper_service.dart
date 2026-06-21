@@ -1,59 +1,33 @@
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import 'package:path_provider/path_provider.dart';
-import 'package:record/record.dart';
+import 'dart:math';
 
+/// Whisper 音声認識サービス（デモ実装）
+///
+/// 本来は OpenAI Whisper API に録音データを送信して文字起こしするが、
+/// このデモでは実際の通信・録音は行わず、擬似的に認識結果を返す。
+/// 音声認識ボタンの UX（録音 → 認識 → メニュー反映）を体験するための実装。
 class WhisperService {
-  // ignore: constant_identifier_names
-  static const String _apiKey = 'YOUR_OPENAI_API_KEY';
-  final AudioRecorder _recorder = AudioRecorder();
   bool _isRecording = false;
+  final Random _rng = Random();
 
   bool get isRecording => _isRecording;
 
+  /// 録音開始（デモのため常に成功）
   Future<bool> startRecording() async {
-    if (kIsWeb) return false;
-    if (!await _recorder.hasPermission()) return false;
-    final dir = await getTemporaryDirectory();
-    final path =
-        '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    await _recorder.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc, sampleRate: 16000),
-      path: path,
-    );
     _isRecording = true;
     return true;
   }
 
-  Future<String?> stopAndTranscribe() async {
-    if (!_isRecording) return null;
-    final path = await _recorder.stop();
+  /// 録音停止＆文字起こし（デモ）
+  ///
+  /// [candidates] に渡されたメニュー名からランダムに1件返す。
+  /// 実際の API 通信の代わりに、少し待ってから結果を返すことで
+  /// 「認識中」の体験を再現する。
+  Future<String?> stopAndTranscribe(List<String> candidates) async {
     _isRecording = false;
-    if (path == null) return null;
-    try {
-      final req = http.MultipartRequest(
-        'POST',
-        Uri.parse('https://api.openai.com/v1/audio/transcriptions'),
-      );
-      req.headers['Authorization'] = 'Bearer $_apiKey';
-      req.fields['model'] = 'whisper-1';
-      req.fields['language'] = 'ja';
-      req.files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          path,
-          filename: 'audio.m4a',
-        ),
-      );
-      final res = await req.send();
-      final body = await res.stream.bytesToString();
-      if (res.statusCode == 200) {
-        return (jsonDecode(body) as Map<String, dynamic>)['text'] as String?;
-      }
-    } catch (_) {}
-    return null;
+    await Future.delayed(const Duration(milliseconds: 900));
+    if (candidates.isEmpty) return null;
+    return candidates[_rng.nextInt(candidates.length)];
   }
 
-  void dispose() => _recorder.dispose();
+  void dispose() {}
 }
