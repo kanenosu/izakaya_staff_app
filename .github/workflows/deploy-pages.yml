@@ -1,0 +1,64 @@
+name: Deploy to GitHub Pages
+
+# Flutter Web をビルドして GitHub Pages へ公開する。
+# Settings → Pages → Build and deployment → Source を「GitHub Actions」にしておくこと。
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - claude/blissful-dirac-h3sv3t
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時実行は最新のみを残す
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable web support
+        run: flutter create --platforms=web .
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # プロジェクトページ（kanenosu.github.io/izakaya_staff_app/）なので base-href を合わせる
+      - name: Build web
+        run: flutter build web --release --base-href "/izakaya_staff_app/"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
