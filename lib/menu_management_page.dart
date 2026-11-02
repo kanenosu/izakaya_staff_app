@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'widgets/custom_bottom_nav_bar.dart'; // 追加
+import 'app_theme.dart';
+import 'utils/menu_sort.dart';
+import 'widgets/custom_bottom_nav_bar.dart';
 
-/// 管理画面：メニューの追加、削除、並び替えが可能（ドリンクはsubCategory別）
+/// 管理画面：メニューの追加・編集・削除・並び替え
+///
+/// 並び替えはカテゴリ単位（ドリンクはサブカテゴリ単位）で行い、
+/// 結果は各メニューの `order` フィールドに WriteBatch で一括保存する。
+/// ここで決めた順番がハンディ注文画面の表示順になる。
 class AdminMenuManagementPage extends StatefulWidget {
-  const AdminMenuManagementPage({Key? key}) : super(key: key);
+  const AdminMenuManagementPage({super.key});
 
   @override
-  _AdminMenuManagementPageState createState() =>
+  State<AdminMenuManagementPage> createState() =>
       _AdminMenuManagementPageState();
 }
 
@@ -35,263 +42,140 @@ class _AdminMenuManagementPageState extends State<AdminMenuManagementPage> {
     'その他',
   ];
 
+  final _col = FirebaseFirestore.instance.collection('menu_items');
+
   String _selectedCategory = categories.first;
+
+  /// 直近のスナップショット（新規追加時の order 計算に使う）
+  List<MenuDoc> _allDocs = [];
+
+  /// 並び替え直後のローカル上書き（docId → order）。
+  /// Firestore 反映前に一瞬元の順に戻る「ちらつき」を防ぐ。
+  final Map<String, int> _localOrder = {};
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onHorizontalDragEnd: (details) {
-        if (details.primaryVelocity != null) {
-          if (details.primaryVelocity! < -200) {
-            // 予約画面があればここに
-          } else if (details.primaryVelocity! > 200) {
-            Navigator.pushReplacementNamed(context, '/inventory');
-          }
+        final v = details.primaryVelocity;
+        if (v != null && v > 200) {
+          Navigator.pushReplacementNamed(context, '/inventory');
         }
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            'メニュー管理',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          centerTitle: true,
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          elevation: 0,
-        ),
+        appBar: AppBar(title: const Text('メニュー管理')),
         bottomNavigationBar: CustomBottomNavBar(
           currentIndex: 3,
           onTap: (index) {
             switch (index) {
-              case 0:
-                // 予約画面へ（未実装なら何もしない or 実装時に追加）
-                break;
               case 1:
                 Navigator.pushReplacementNamed(context, '/');
                 break;
               case 2:
                 Navigator.pushReplacementNamed(context, '/inventory');
                 break;
-              case 3:
-                // 今いる画面なので何もしない
-                break;
             }
           },
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _showAddDialog,
+          backgroundColor: AppColors.accent,
+          foregroundColor: Colors.white,
+          icon: const Icon(Icons.add),
+          label: const Text('メニュー追加'),
         ),
         body: Column(
           children: [
             Padding(
-              padding: const EdgeInsets.all(8.0),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
               child: DropdownButton<String>(
                 value: _selectedCategory,
                 isExpanded: true,
-                items:
-                    categories
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
+                items: categories
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
                 onChanged: (v) => setState(() => _selectedCategory = v!),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: Row(
+                children: [
+                  Icon(Icons.drag_indicator, size: 16, color: AppColors.inkSoft),
+                  SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'ハンドルをドラッグして並び替え（ハンディ注文の表示順に反映）',
+                      style: TextStyle(fontSize: 12, color: AppColors.inkSoft),
+                    ),
+                  ),
+                ],
               ),
             ),
             Expanded(
               child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                // Firestore から全メニューを取得し、内部でカテゴリフィルター
-                stream:
-                    FirebaseFirestore.instance
-                        .collection('menu_items')
-                        .orderBy('order')
-                        .snapshots(),
+                // orderBy('order') は order 未設定のメニューを除外するため使わず、
+                // 全件取得してクライアント側で並べ替える
+                stream: _col.snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return Center(child: Text('Error: ${snapshot.error}'));
                   }
-                  if (snapshot.connectionState == ConnectionState.waiting ||
-                      !snapshot.hasData) {
+                  if (!snapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  // 選択中カテゴリでフィルタリング
-                  final allDocs = snapshot.data!.docs;
-                  final docs =
-                      allDocs
-                          .where(
-                            (doc) =>
-                                doc.data()['category'] == _selectedCategory,
-                          )
-                          .toList();
+                  _allDocs = snapshot.data!.docs;
+                  _pruneLocalOrder();
 
-                  // ドリンクは subCategory ごとに表示
+                  final docs = sortMenuDocs(
+                    _allDocs.where(
+                      (d) => d.data()['category'] == _selectedCategory,
+                    ),
+                    _localOrder,
+                  );
+
+                  if (docs.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'このカテゴリにメニューはありません',
+                        style: TextStyle(color: AppColors.inkSoft),
+                      ),
+                    );
+                  }
+
+                  // ドリンクはサブカテゴリごとに並び替え
                   if (_selectedCategory == 'ドリンク') {
-                    final Map<
-                      String,
-                      List<QueryDocumentSnapshot<Map<String, dynamic>>>
-                    >
-                    subMap = {};
-                    for (var doc in docs) {
+                    final Map<String, List<MenuDoc>> subMap = {};
+                    for (final doc in docs) {
                       final sub = doc.data()['subCategory'] as String? ?? 'その他';
                       subMap.putIfAbsent(sub, () => []).add(doc);
                     }
                     final subs = [
-                      ...drinkSubs.where((s) => subMap.containsKey(s)),
+                      ...drinkSubs.where(subMap.containsKey),
                       ...subMap.keys.where((k) => !drinkSubs.contains(k)),
                     ];
                     return ListView(
-                      padding: const EdgeInsets.all(8),
-                      children:
-                          subs.map((sub) {
-                            final list = subMap[sub]!;
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 4,
-                                  ),
-                                  child: Text(
-                                    sub,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                ReorderableListView(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  onReorder: (oldIndex, newIndex) async {
-                                    if (newIndex > oldIndex) newIndex--;
-                                    final moved = list.removeAt(oldIndex);
-                                    list.insert(newIndex, moved);
-                                    final batch =
-                                        FirebaseFirestore.instance.batch();
-                                    for (var i = 0; i < list.length; i++) {
-                                      batch.update(list[i].reference, {
-                                        'order': i,
-                                      });
-                                    }
-                                    await batch.commit();
-                                    setState(() {});
-                                  },
-                                  children: [
-                                    for (var i = 0; i < list.length; i++)
-                                      ListTile(
-                                        key: ValueKey(list[i].id),
-                                        title: Text(
-                                          list[i].data()['name'] as String,
-                                        ),
-                                        subtitle: Text(
-                                          '¥${list[i].data()['price']}',
-                                        ),
-                                        trailing: IconButton(
-                                          icon: const Icon(
-                                            Icons.delete,
-                                            color: Colors.red,
-                                          ),
-                                          onPressed: () async {
-                                            final ok = await showDialog<bool>(
-                                              context: context,
-                                              builder:
-                                                  (c) => AlertDialog(
-                                                    title: const Text('削除確認'),
-                                                    content: const Text(
-                                                      '本当に削除しますか？',
-                                                    ),
-                                                    actions: [
-                                                      TextButton(
-                                                        onPressed:
-                                                            () => Navigator.pop(
-                                                              c,
-                                                              false,
-                                                            ),
-                                                        child: const Text(
-                                                          'キャンセル',
-                                                        ),
-                                                      ),
-                                                      TextButton(
-                                                        onPressed:
-                                                            () => Navigator.pop(
-                                                              c,
-                                                              true,
-                                                            ),
-                                                        child: const Text(
-                                                          '削除',
-                                                          style: TextStyle(
-                                                            color: Colors.red,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                            );
-                                            if (ok == true) {
-                                              await list[i].reference.delete();
-                                              setState(() {});
-                                            }
-                                          },
-                                        ),
-                                        onTap: () => _showEditDialog(list[i]),
-                                      ),
-                                  ],
-                                ),
-                              ],
-                            );
-                          }).toList(),
+                      padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
+                      children: [
+                        for (final sub in subs) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
+                            child: Text(
+                              sub,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.ink,
+                              ),
+                            ),
+                          ),
+                          _buildReorderableList(subMap[sub]!, nested: true),
+                        ],
+                      ],
                     );
                   }
 
-                  // その他カテゴリ
-                  return ReorderableListView(
-                    onReorder: (oldIndex, newIndex) async {
-                      if (newIndex > oldIndex) newIndex--;
-                      final moved = docs.removeAt(oldIndex);
-                      docs.insert(newIndex, moved);
-                      final batch = FirebaseFirestore.instance.batch();
-                      for (var i = 0; i < docs.length; i++) {
-                        batch.update(docs[i].reference, {'order': i});
-                      }
-                      await batch.commit();
-                      setState(() {});
-                    },
-                    children: [
-                      for (var doc in docs)
-                        ListTile(
-                          key: ValueKey(doc.id),
-                          title: Text(doc.data()['name'] as String),
-                          subtitle: Text('¥${doc.data()['price']}'),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () async {
-                              final ok = await showDialog<bool>(
-                                context: context,
-                                builder:
-                                    (c) => AlertDialog(
-                                      title: const Text('削除確認'),
-                                      content: const Text('本当に削除しますか？'),
-                                      actions: [
-                                        TextButton(
-                                          onPressed:
-                                              () => Navigator.pop(c, false),
-                                          child: const Text('キャンセル'),
-                                        ),
-                                        TextButton(
-                                          onPressed:
-                                              () => Navigator.pop(c, true),
-                                          child: const Text(
-                                            '削除',
-                                            style: TextStyle(color: Colors.red),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                              );
-                              if (ok == true) {
-                                await doc.reference.delete();
-                                setState(() {});
-                              }
-                            },
-                          ),
-                          onTap: () => _showEditDialog(doc),
-                        ),
-                    ],
-                  );
+                  return _buildReorderableList(docs);
                 },
               ),
             ),
@@ -301,7 +185,163 @@ class _AdminMenuManagementPageState extends State<AdminMenuManagementPage> {
     );
   }
 
-  /// 新規追加ダイアログ
+  // ===== 並び替えリスト =====
+
+  Widget _buildReorderableList(List<MenuDoc> items, {bool nested = false}) {
+    return ReorderableListView.builder(
+      shrinkWrap: nested,
+      physics: nested ? const NeverScrollableScrollPhysics() : null,
+      padding: nested
+          ? EdgeInsets.zero
+          : const EdgeInsets.fromLTRB(12, 4, 12, 96),
+      // 既定のハンドル（PCでは右端・スマホでは長押し）は使わず、
+      // 左端のハンドルから即ドラッグできるようにする
+      buildDefaultDragHandles: false,
+      itemCount: items.length,
+      onReorder: (oldIndex, newIndex) => _onReorder(items, oldIndex, newIndex),
+      proxyDecorator: (child, index, animation) => Material(
+        elevation: 6,
+        color: Colors.transparent,
+        shadowColor: Colors.black26,
+        borderRadius: BorderRadius.circular(14),
+        child: child,
+      ),
+      itemBuilder: (context, i) => _buildMenuTile(items[i], i),
+    );
+  }
+
+  Widget _buildMenuTile(MenuDoc doc, int index) {
+    final data = doc.data();
+    return Padding(
+      key: ValueKey(doc.id),
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        child: ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: AppColors.line),
+          ),
+          contentPadding: const EdgeInsets.only(left: 4, right: 4),
+          leading: ReorderableDragStartListener(
+            index: index,
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              child: Icon(Icons.drag_indicator, color: AppColors.inkSoft),
+            ),
+          ),
+          title: Text(
+            data['name'] as String? ?? '',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text('¥${data['price'] ?? 0}'),
+          trailing: IconButton(
+            tooltip: '削除',
+            icon: const Icon(Icons.delete_outline, color: AppColors.accent),
+            onPressed: () => _confirmAndDelete(doc),
+          ),
+          onTap: () => _showEditDialog(doc),
+        ),
+      ),
+    );
+  }
+
+  /// ドラッグ確定時：表示を即更新し、変わった order だけを一括保存
+  Future<void> _onReorder(
+    List<MenuDoc> items,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    if (newIndex > oldIndex) newIndex--;
+    if (newIndex == oldIndex) return;
+    HapticFeedback.selectionClick();
+
+    final reordered = [...items];
+    reordered.insert(newIndex, reordered.removeAt(oldIndex));
+
+    setState(() {
+      for (var i = 0; i < reordered.length; i++) {
+        _localOrder[reordered[i].id] = i;
+      }
+    });
+
+    final batch = FirebaseFirestore.instance.batch();
+    for (var i = 0; i < reordered.length; i++) {
+      if (menuOrderOf(reordered[i]) != i) {
+        batch.update(reordered[i].reference, {'order': i});
+      }
+    }
+    try {
+      await batch.commit();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        for (final d in reordered) {
+          _localOrder.remove(d.id);
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('並び替えの保存に失敗しました: $e')),
+      );
+    }
+  }
+
+  /// Firestore 側に反映済みの上書きを取り除く
+  void _pruneLocalOrder() {
+    if (_localOrder.isEmpty) return;
+    final byId = {for (final d in _allDocs) d.id: d};
+    _localOrder.removeWhere((id, order) {
+      final doc = byId[id];
+      return doc == null || menuOrderOf(doc) == order;
+    });
+  }
+
+  /// 指定カテゴリ（ドリンクはサブカテゴリ）の末尾に置くための order
+  int _nextOrder(String category, String? subCategory) {
+    var maxOrder = -1;
+    for (final d in _allDocs) {
+      final data = d.data();
+      if (data['category'] != category) continue;
+      if (category == 'ドリンク' &&
+          (data['subCategory'] as String? ?? 'その他') != subCategory) {
+        continue;
+      }
+      final o = data['order'];
+      if (o is num && o.toInt() > maxOrder) maxOrder = o.toInt();
+    }
+    return maxOrder + 1;
+  }
+
+  // ===== 削除 =====
+
+  Future<bool> _confirmAndDelete(MenuDoc doc) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('削除確認'),
+        content: Text('「${doc.data()['name']}」を削除しますか？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('キャンセル'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('削除', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await doc.reference.delete();
+      return true;
+    }
+    return false;
+  }
+
+  // ===== 新規追加 =====
+
   void _showAddDialog() {
     String name = '';
     String priceStr = '';
@@ -309,196 +349,155 @@ class _AdminMenuManagementPageState extends State<AdminMenuManagementPage> {
     String subCategory = drinkSubs.first;
     showDialog(
       context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('新規メニュー追加'),
-            content: StatefulBuilder(
-              builder:
-                  (c, setState) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        decoration: const InputDecoration(labelText: '名前'),
-                        onChanged: (v) => name = v,
-                      ),
-                      TextField(
-                        decoration: const InputDecoration(labelText: '価格'),
-                        keyboardType: TextInputType.number,
-                        onChanged: (v) => priceStr = v,
-                      ),
-                      DropdownButton<String>(
-                        value: category,
-                        isExpanded: true,
-                        items:
-                            categories
-                                .map(
-                                  (c) => DropdownMenuItem(
-                                    value: c,
-                                    child: Text(c),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (v) => setState(() => category = v!),
-                      ),
-                      if (category == 'ドリンク')
-                        DropdownButton<String>(
-                          value: subCategory,
-                          isExpanded: true,
-                          items:
-                              drinkSubs
-                                  .map(
-                                    (s) => DropdownMenuItem(
-                                      value: s,
-                                      child: Text(s),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (v) => setState(() => subCategory = v!),
-                        ),
-                    ],
-                  ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('キャンセル'),
+      builder: (ctx) => AlertDialog(
+        title: const Text('新規メニュー追加'),
+        content: StatefulBuilder(
+          builder: (c, setDialogState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: '名前',
+                  helperText: '略称は「正式名(略称1、略称2)」の形式で入力',
+                ),
+                onChanged: (v) => name = v,
               ),
-              ElevatedButton(
-                onPressed: () async {
-                  final price = int.tryParse(priceStr) ?? 0;
-                  final col = FirebaseFirestore.instance.collection(
-                    'menu_items',
-                  );
-                  final snap = await col.get();
-                  await col.add({
-                    'name': name,
-                    'price': price,
-                    'category': category,
-                    'subCategory': category == 'ドリンク' ? subCategory : null,
-                    'order': snap.docs.length,
-                  });
-                  Navigator.pop(ctx);
-                  setState(() {});
-                },
-                child: const Text('追加'),
+              const SizedBox(height: 8),
+              TextField(
+                decoration: const InputDecoration(labelText: '価格'),
+                keyboardType: TextInputType.number,
+                onChanged: (v) => priceStr = v,
               ),
+              DropdownButton<String>(
+                value: category,
+                isExpanded: true,
+                items: categories
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) => setDialogState(() => category = v!),
+              ),
+              if (category == 'ドリンク')
+                DropdownButton<String>(
+                  value: subCategory,
+                  isExpanded: true,
+                  items: drinkSubs
+                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                      .toList(),
+                  onChanged: (v) => setDialogState(() => subCategory = v!),
+                ),
             ],
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (name.trim().isEmpty) return;
+              final sub = category == 'ドリンク' ? subCategory : null;
+              await _col.add({
+                'name': name.trim(),
+                'price': int.tryParse(priceStr) ?? 0,
+                'category': category,
+                'subCategory': sub,
+                // 追加先カテゴリの末尾に並べる
+                'order': _nextOrder(category, sub),
+              });
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('追加'),
+          ),
+        ],
+      ),
     );
   }
 
-  /// 編集ダイアログ
-  void _showEditDialog(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-    String name = doc.data()['name'] as String;
-    String priceStr = (doc.data()['price'] as int).toString();
-    String category = doc.data()['category'] as String;
-    String subCategory =
-        doc.data()['subCategory'] as String? ?? drinkSubs.first;
+  // ===== 編集 =====
+
+  void _showEditDialog(MenuDoc doc) {
+    final data = doc.data();
+    final nameCtrl = TextEditingController(text: data['name'] as String? ?? '');
+    final priceCtrl = TextEditingController(
+      text: '${(data['price'] as num?)?.toInt() ?? 0}',
+    );
+    final originalCategory = data['category'] as String? ?? categories.first;
+    final originalSub = data['subCategory'] as String?;
+    String category = originalCategory;
+    String subCategory = originalSub ?? drinkSubs.first;
+
     showDialog(
       context: context,
-      builder:
-          (ctx) => AlertDialog(
-            title: const Text('メニュー編集'),
-            content: StatefulBuilder(
-              builder:
-                  (c, setState) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextField(
-                        controller: TextEditingController(text: name),
-                        decoration: const InputDecoration(labelText: '名前'),
-                        onChanged: (v) => name = v,
-                      ),
-                      TextField(
-                        controller: TextEditingController(text: priceStr),
-                        decoration: const InputDecoration(labelText: '価格'),
-                        keyboardType: TextInputType.number,
-                        onChanged: (v) => priceStr = v,
-                      ),
-                      DropdownButton<String>(
-                        value: category,
-                        isExpanded: true,
-                        items:
-                            categories
-                                .map(
-                                  (c) => DropdownMenuItem(
-                                    value: c,
-                                    child: Text(c),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (v) => setState(() => category = v!),
-                      ),
-                      if (category == 'ドリンク')
-                        DropdownButton<String>(
-                          value: subCategory,
-                          isExpanded: true,
-                          items:
-                              drinkSubs
-                                  .map(
-                                    (s) => DropdownMenuItem(
-                                      value: s,
-                                      child: Text(s),
-                                    ),
-                                  )
-                                  .toList(),
-                          onChanged: (v) => setState(() => subCategory = v!),
-                        ),
-                    ],
-                  ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () async {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder:
-                        (c) => AlertDialog(
-                          title: const Text('削除確認'),
-                          content: const Text('本当に削除しますか？'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(c, false),
-                              child: const Text('キャンセル'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.pop(c, true),
-                              child: const Text(
-                                '削除',
-                                style: TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
-                        ),
-                  );
-                  if (ok == true) {
-                    await doc.reference.delete();
-                    Navigator.pop(ctx);
-                    setState(() {});
-                  }
-                },
-                child: const Text('削除', style: TextStyle(color: Colors.red)),
+      builder: (ctx) => AlertDialog(
+        title: const Text('メニュー編集'),
+        content: StatefulBuilder(
+          builder: (c, setDialogState) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: '名前'),
               ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('キャンセル'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: priceCtrl,
+                decoration: const InputDecoration(labelText: '価格'),
+                keyboardType: TextInputType.number,
               ),
-              ElevatedButton(
-                onPressed: () async {
-                  final price = int.tryParse(priceStr) ?? 0;
-                  await doc.reference.update({
-                    'name': name,
-                    'price': price,
-                    'category': category,
-                    'subCategory': category == 'ドリンク' ? subCategory : null,
-                  });
-                  Navigator.pop(ctx);
-                  setState(() {});
-                },
-                child: const Text('保存'),
+              DropdownButton<String>(
+                value: category,
+                isExpanded: true,
+                items: categories
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (v) => setDialogState(() => category = v!),
               ),
+              if (category == 'ドリンク')
+                DropdownButton<String>(
+                  value: subCategory,
+                  isExpanded: true,
+                  items: drinkSubs
+                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                      .toList(),
+                  onChanged: (v) => setDialogState(() => subCategory = v!),
+                ),
             ],
           ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              if (await _confirmAndDelete(doc) && ctx.mounted) {
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('削除', style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('キャンセル'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final sub = category == 'ドリンク' ? subCategory : null;
+              final update = <String, dynamic>{
+                'name': nameCtrl.text.trim(),
+                'price': int.tryParse(priceCtrl.text) ?? 0,
+                'category': category,
+                'subCategory': sub,
+              };
+              // カテゴリを移動した場合は移動先の末尾へ
+              if (category != originalCategory || sub != originalSub) {
+                update['order'] = _nextOrder(category, sub);
+              }
+              await doc.reference.update(update);
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
     );
   }
 }

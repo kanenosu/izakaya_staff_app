@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'app_theme.dart';
 import 'services/whisper_service.dart';
+import 'utils/menu_sort.dart';
 
 /// カート用モデル
 class CartItem {
@@ -100,16 +101,13 @@ class _HandyOrderPageState extends State<HandyOrderPage> {
       ),
       bottomNavigationBar: _buildBottomBar(),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('menu_items')
-            .orderBy('category')
-            .orderBy('order')
-            .snapshots(),
+        // メニュー管理画面で決めた order 順に表示（order 未設定は末尾）
+        stream: FirebaseFirestore.instance.collection('menu_items').snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          _menuDocs = snapshot.data!.docs;
+          _menuDocs = sortMenuDocs(snapshot.data!.docs);
 
           // カテゴリでグルーピング
           final Map<String, List<QueryDocumentSnapshot<Map<String, dynamic>>>>

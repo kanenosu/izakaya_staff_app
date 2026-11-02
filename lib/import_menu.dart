@@ -328,24 +328,27 @@ Future<void> main() async {
     if (value is Map<String, List>) {
       // ドリンク系：大カテゴリ/サブカテゴリ
       value.forEach((subCategory, items) {
-        for (var item in items) {
+        for (var i = 0; i < items.length; i++) {
           batch.set(
             col.doc(), // 自動ID
             {
-              'name': item['name'],
-              'price': item['price'],
-              'category': '$topCategory/$subCategory',
+              'name': items[i]['name'],
+              'price': items[i]['price'],
+              'category': topCategory,
+              'subCategory': subCategory,
+              'order': i, // サブカテゴリ内の表示順（メニュー管理で並び替え可能）
             },
           );
         }
       });
     } else if (value is List) {
       // フード系：カテゴリそのまま
-      for (var item in value) {
+      for (var i = 0; i < value.length; i++) {
         batch.set(col.doc(), {
-          'name': item['name'],
-          'price': item['price'],
+          'name': value[i]['name'],
+          'price': value[i]['price'],
           'category': topCategory,
+          'order': i, // カテゴリ内の表示順
         });
       }
     }
